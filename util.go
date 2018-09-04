@@ -14,10 +14,11 @@ type response struct {
 type uploadedResponse struct {
 	response
 	Path string `json:"path"`
+	Hash string `json:"hash"`
 }
 
-func newUploadedResponse(path string) uploadedResponse {
-	return uploadedResponse{response: response{OK: true}, Path: path}
+func newUploadedResponse(path, hash string) uploadedResponse {
+	return uploadedResponse{response: response{OK: true}, Path: path, Hash: hash}
 }
 
 type errorResponse struct {
@@ -39,8 +40,8 @@ func writeError(w http.ResponseWriter, err error) (int, error) {
 	return w.Write(b)
 }
 
-func writeSuccess(w http.ResponseWriter, path string) (int, error) {
-	body := newUploadedResponse(path)
+func writeSuccess(w http.ResponseWriter, path string, hash string) (int, error) {
+	body := newUploadedResponse(path, hash)
 	b, e := json.Marshal(body)
 	// if an error is occured on marshaling, write empty value as response.
 	if e != nil {

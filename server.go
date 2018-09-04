@@ -1,7 +1,7 @@
 package main
 
 import (
-	"crypto/sha1"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
@@ -20,26 +20,28 @@ type Server struct {
 	DocumentRoot string
 	// MaxUploadSize limits the size of the uploaded content, specified with "byte".
 	MaxUploadSize int64
-	SecureToken   string
+	// PathPrefix is the path that gets injected
+	PathPrefix string
 }
 
 // NewServer creates a new simple-upload server.
-func NewServer(documentRoot string, maxUploadSize int64, token string) Server {
+func NewServer(documentRoot string, maxUploadSize int64, pathPrefix string) Server {
 	return Server{
 		DocumentRoot:  documentRoot,
 		MaxUploadSize: maxUploadSize,
-		SecureToken:   token,
+		// PathPrefix:    strings.TrimSuffix(pathPrefix, "/"),
+		PathPrefix: pathPrefix,
 	}
 }
 
 func (s Server) handleGet(w http.ResponseWriter, r *http.Request) {
-	re := regexp.MustCompile(`^/files/([^/]+)$`)
+	re := regexp.MustCompile(`^` + s.PathPrefix + `([^/]+)$`)
 	if !re.MatchString(r.URL.Path) {
 		w.WriteHeader(http.StatusNotFound)
 		writeError(w, fmt.Errorf("\"%s\" is not found", r.URL.Path))
 		return
 	}
-	http.StripPrefix("/files/", http.FileServer(http.Dir(s.DocumentRoot))).ServeHTTP(w, r)
+	http.StripPrefix(s.PathPrefix, http.FileServer(http.Dir(s.DocumentRoot))).ServeHTTP(w, r)
 }
 
 func (s Server) handlePost(w http.ResponseWriter, r *http.Request) {
@@ -75,7 +77,7 @@ func (s Server) handlePost(w http.ResponseWriter, r *http.Request) {
 	}
 	filename := info.Filename
 	if filename == "" {
-		filename = fmt.Sprintf("%x", sha1.Sum(body))
+		filename = fmt.Sprintf("%x", sha256.Sum256(body))
 	}
 
 	dstPath := path.Join(s.DocumentRoot, filename)
@@ -86,7 +88,7 @@ func (s Server) handlePost(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	defer dstFile.Close()
+
 	if written, err := dstFile.Write(body); err != nil {
 		logger.WithError(err).WithField("path", dstPath).Error("failed to write the content")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -100,22 +102,43 @@ func (s Server) handlePost(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		writeError(w, fmt.Errorf("the size of uploaded content is %d, but %d bytes written", size, written))
 	}
+	defer dstFile.Close()
+
+	writtenFile, err := os.Open(dstPath)
+	if err != nil {
+		logger.WithError(err).WithField("path", dstPath).Error("failed to read the newly written file")
+		w.WriteHeader(http.StatusInternalServerError)
+		writeError(w, err)
+		return
+	}
+	defer writtenFile.Close()
+
+	writtenHash := sha256.New()
+	if _, err := io.Copy(writtenHash, writtenFile); err != nil {
+		logger.WithError(err).WithField("path", dstPath).Error("failed to hash the newly written file")
+		w.WriteHeader(http.StatusInternalServerError)
+		writeError(w, err)
+		return
+	}
+	hash := fmt.Sprintf("sha256:%x", writtenHash.Sum(nil))
+
 	uploadedURL := strings.TrimPrefix(dstPath, s.DocumentRoot)
 	if !strings.HasPrefix(uploadedURL, "/") {
 		uploadedURL = "/" + uploadedURL
 	}
-	uploadedURL = "/files" + uploadedURL
+	uploadedURL = s.PathPrefix + uploadedURL
 	logger.WithFields(logrus.Fields{
 		"path": dstPath,
 		"url":  uploadedURL,
 		"size": size,
+		"hash": hash,
 	}).Info("file uploaded by POST")
 	w.WriteHeader(http.StatusOK)
-	writeSuccess(w, uploadedURL)
+	writeSuccess(w, uploadedURL, hash)
 }
 
 func (s Server) handlePut(w http.ResponseWriter, r *http.Request) {
-	re := regexp.MustCompile(`^/files/([^/]+)$`)
+	re := regexp.MustCompile(`^` + s.PathPrefix + `([^/]+)$`)
 	matches := re.FindStringSubmatch(r.URL.Path)
 	if matches == nil {
 		logger.WithField("path", r.URL.Path).Info("invalid path")
@@ -168,27 +191,35 @@ func (s Server) handlePut(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
+
+	writtenFile, err := os.Open(targetPath)
+	if err != nil {
+		logger.WithError(err).WithField("path", targetPath).Error("failed to read the newly written file")
+		w.WriteHeader(http.StatusInternalServerError)
+		writeError(w, err)
+		return
+	}
+	defer writtenFile.Close()
+
+	writtenHash := sha256.New()
+	if _, err := io.Copy(writtenHash, writtenFile); err != nil {
+		logger.WithError(err).WithField("path", targetPath).Error("failed to hash the newly written file")
+		w.WriteHeader(http.StatusInternalServerError)
+		writeError(w, err)
+		return
+	}
+	hash := fmt.Sprintf("sha256:%x", writtenHash.Sum(nil))
+
 	logger.WithFields(logrus.Fields{
 		"path": r.URL.Path,
 		"size": n,
+		"hash": hash,
 	}).Info("file uploaded by PUT")
 	w.WriteHeader(http.StatusOK)
-	writeSuccess(w, r.URL.Path)
+	writeSuccess(w, r.URL.Path, hash)
 }
 
 func (s Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// first, try to get the token from the query strings
-	token := r.URL.Query().Get("token")
-	// if token is not found, check the form parameter.
-	if token == "" {
-		token = r.Form.Get("token")
-	}
-	if token != s.SecureToken {
-		w.WriteHeader(http.StatusUnauthorized)
-		writeError(w, fmt.Errorf("authentication required"))
-		return
-	}
-
 	switch r.Method {
 	case http.MethodGet, http.MethodHead:
 		s.handleGet(w, r)
