@@ -27,8 +27,6 @@ type response struct {
 	Hash    string `json:",omitempty"`
 }
 
-var err error
-
 // New creates a new simple-upload server.
 func New(documentRoot string, maxUploadSize int64, pathPrefix string, log *log.Logger) Server {
 	return Server{
@@ -48,27 +46,29 @@ func (s Server) LoggingMiddleware(next http.Handler) http.Handler {
 }
 
 func (s Server) writeResponse(w http.ResponseWriter, res response) {
-	if res.Error != nil {
-		s.Logger.Printf(fmt.Sprintf("[ERROR] %v %v", res.Message, res.Error))
-	}
 	w.WriteHeader(res.Status)
 	w.Header().Set("Content-Type", "application/json")
 
-	b, e := json.Marshal(res)
-	if e != nil {
-		w.Write([]byte{})
+	b, err := json.Marshal(res)
+	if res.Error != nil || err != nil {
+		s.Logger.Printf(fmt.Sprintf("[ERROR] %v %v", res.Message, res.Error))
 	}
+
 	w.Write(b)
 }
 
 func getSize(content io.Seeker) (int64, error) {
-	size, err := content.Seek(0, os.SEEK_END)
-	if err != nil {
+
+	var size int64
+	var err error
+
+	if size, err = content.Seek(0, io.SeekEnd); err != nil {
 		return 0, err
 	}
-	_, err = content.Seek(0, os.SEEK_SET)
-	if err != nil {
+
+	if _, err = content.Seek(0, os.SEEK_SET); err != nil {
 		return 0, err
 	}
+
 	return size, nil
 }

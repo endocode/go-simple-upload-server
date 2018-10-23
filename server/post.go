@@ -14,7 +14,10 @@ import (
 
 // PostHandler handles all post requests
 func (s Server) PostHandler(w http.ResponseWriter, r *http.Request) {
+
+	var err error
 	var res response
+
 	res.Path = r.URL.RequestURI()
 	res.Method = r.Method
 
@@ -73,7 +76,7 @@ func (s Server) PostHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	targetPath := path.Join(s.DocumentRoot, info.Filename)
-	targetFile, err := os.OpenFile(targetPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0666)
+	targetFile, err := os.OpenFile(targetPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 
 	if err != nil {
 
@@ -86,7 +89,6 @@ func (s Server) PostHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer targetFile.Close()
 
-	err = nil
 	if written, err := targetFile.Write(body); err != nil {
 
 		res.Status = http.StatusInternalServerError
@@ -129,13 +131,7 @@ func (s Server) PostHandler(w http.ResponseWriter, r *http.Request) {
 		s.writeResponse(w, res)
 		return
 	}
-	/*
-		uploadedURL := strings.TrimPrefix(targetPath, s.DocumentRoot)
-		if !strings.HasPrefix(uploadedURL, "/") {
-			uploadedURL = "/" + uploadedURL
-		}
-		uploadedURL = s.PathPrefix + uploadedURL
-	*/
+
 	res.Status = http.StatusOK
 	res.Path = s.PathPrefix + strings.TrimPrefix(targetPath, s.DocumentRoot)
 	res.Error = err
