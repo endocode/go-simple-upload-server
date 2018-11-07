@@ -21,23 +21,23 @@ func run(args []string) int {
 	maxUploadSize := flag.Int64("upload_limit", 5242880, "max size of uploaded file (byte)")
 	debugFlag := flag.Bool("debug", false, "Turn debug on/off")
 	pathPrefix := flag.String("pathPrefix", "/moo", "inject path prefix")
-	webspace := flag.String("serverRoot", "/tmp/htdocs", "Webspace")
+	webSpace := flag.String("serverRoot", "/tmp/htdocs", "Webspace")
 	flag.Parse()
 
 	logger := logging.Start(*debugFlag)
+	logger.Printf("[DEBUG] Debug mode is on")
 
-	serverRoot, err := filepath.Abs(*webspace)
+	webSpaceAbsPath, err := filepath.Abs(*webSpace)
 	if err != nil {
 		return 2
 	}
-	if _, err := os.Stat(serverRoot); os.IsNotExist(err) {
-		logger.Printf(fmt.Sprintf("[FATAL] Server root is not available: %v", serverRoot))
+
+	if _, err := os.Stat(webSpaceAbsPath); os.IsNotExist(err) {
+		logger.Printf(fmt.Sprintf("[FATAL] Server root is not available: %v", webSpaceAbsPath))
 		return 2
-
 	}
-	logger.Printf(fmt.Sprintf("[INFO] Server root: %v", serverRoot))
 
-	server := server.New(serverRoot, *maxUploadSize, *pathPrefix, logger)
+	server := server.New(webSpaceAbsPath, *maxUploadSize, *pathPrefix, logger)
 
 	r := mux.NewRouter()
 
@@ -50,9 +50,13 @@ func run(args []string) int {
 
 	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", *bindAddress, *listenPort))
 	if err != nil {
-		panic(err)
+		logger.Printf("[FATAL] Failed to initialize listener: %v", err)
 	}
 
+	logger.Printf(fmt.Sprintf("[INFO] Maximum upload size: %v bytes", *maxUploadSize))
+	logger.Printf(fmt.Sprintf("[INFO] Server root: %v", webSpaceAbsPath))
+	logger.Printf(fmt.Sprintf("[INFO] Path prefix: %v", *pathPrefix))
+	logger.Printf(fmt.Sprintf("[INFO] Health endpoint on: http://%v:%v/health", *bindAddress, *listenPort))
 	log.Fatal(http.Serve(listener, r))
 	return 0
 }

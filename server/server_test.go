@@ -29,7 +29,6 @@ func CreateTestServer() (Server, string) {
 		log.Fatal(err)
 	}
 
-	err = nil
 	tmpDirPath, err := filepath.Abs(tmpDir)
 	if err != nil {
 		log.Fatal(err)
