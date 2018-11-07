@@ -1,7 +1,7 @@
 .PHONY: test lint
 TEMPDIR := $(shell mktemp -d)
 
-all: install
+all: dep install
 
 test: gotest lint
 
@@ -32,3 +32,5 @@ clean:
 	@rm -rf ./tmp
 	@docker rmi go-simple-server
 
+dep:
+	@dep ensure -update
