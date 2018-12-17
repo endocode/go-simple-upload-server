@@ -44,7 +44,7 @@ func run(args []string) int {
 	r.HandleFunc("/health", server.HealthCheckHandler)
 	r.PathPrefix(*pathPrefix).HandlerFunc(server.GetHandler).Methods("Get")
 	r.PathPrefix(*pathPrefix).HandlerFunc(server.PostHandler).Methods("Post")
-	r.PathPrefix(*pathPrefix).HandlerFunc(server.PostHandler).Methods("Put")
+	r.PathPrefix(*pathPrefix).HandlerFunc(server.PutHandler).Methods("Put")
 
 	r.Use(server.LoggingMiddleware)
 
